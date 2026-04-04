@@ -195,15 +195,26 @@
             <div class="module-head">
               <div>
                 <span class="label">Module</span>
-                <h3>Beacon Control</h3>
+                <h3>Beacon Profile</h3>
               </div>
-              <span class="value-pill" id="beaconRateDisplay">280 PPS</span>
+              <span class="value-pill" id="beaconRateDisplay">Profile 01</span>
             </div>
-            <p class="module-copy">Packets per second control with real-time feedback and a pressable hardware start button.</p>
-            <div class="slider-shell">
-              <input id="beaconSlider" type="range" min="80" max="1200" step="20" value="280">
+            <p class="module-copy">Safe profile editor for the selected SSID label. This does not create fake access points. Use it to keep one operator name in sync across the dashboard.</p>
+            <div class="field-stack">
+              <label class="field-label" for="beaconLabelInput">Profile Name</label>
+              <input id="beaconLabelInput" class="text-input" type="text" placeholder="Enter one profile name">
             </div>
-            <button class="hardware-button primary haptic-btn" id="beaconButton" type="button">Start Beacon</button>
+            <div class="mini-stat-row">
+              <div class="mini-stat">
+                <span>Mode</span>
+                <strong id="beaconModeDisplay">Safe Label</strong>
+              </div>
+              <div class="mini-stat">
+                <span>Copies To</span>
+                <strong id="beaconCopyCount">1 field</strong>
+              </div>
+            </div>
+            <button class="hardware-button primary haptic-btn" id="beaconButton" type="button">Apply Profile</button>
           </section>
 
           <section class="module-card">
@@ -226,15 +237,53 @@
             <div class="module-head">
               <div>
                 <span class="label">Transport</span>
-                <h3>Socket Route</h3>
+                <h3>ESP32 Bridge</h3>
               </div>
-              <span class="value-pill" id="routeModeDisplay">Mock Ready</span>
+              <span class="value-pill" id="routeModeDisplay">Disconnected</span>
+            </div>
+            <div class="field-stack">
+              <label class="field-label" for="esp32IpInput">ESP32 IP Address</label>
+              <input id="esp32IpInput" class="text-input" type="text" value="192.168.4.1" placeholder="192.168.4.1">
             </div>
             <div class="field-stack">
               <label class="field-label" for="socketRouteInput">WebSocket URL</label>
               <input id="socketRouteInput" class="text-input" type="text" value="ws://192.168.4.1/ws" placeholder="ws://192.168.4.1/ws">
             </div>
+            <div class="module-copy compact-copy">
+              <div class="mini-stat-row">
+                <div class="mini-stat">
+                  <span>Wi-Fi Name</span>
+                  <strong id="esp32SsidDisplay">DeautherNet</strong>
+                </div>
+                <div class="mini-stat">
+                  <span>Password</span>
+                  <strong id="esp32PasswordDisplay">SOURAV14692</strong>
+                </div>
+              </div>
+            </div>
+            <button class="hardware-button secondary haptic-btn" id="loadStatusButton" type="button">Load /status</button>
             <button class="hardware-button secondary haptic-btn" id="reconnectButton" type="button">Reconnect</button>
+          </section>
+
+          <section class="module-card">
+            <div class="module-head">
+              <div>
+                <span class="label">Device</span>
+                <h3>Status Sync</h3>
+              </div>
+              <span class="value-pill" id="statusSyncBadge">Manual</span>
+            </div>
+            <p class="module-copy">Fetches the ESP32 `/status` JSON and fills the control panel with the Wi-Fi name, password, and device state when available.</p>
+            <div class="mini-stat-row">
+              <div class="mini-stat">
+                <span>HTTP</span>
+                <strong id="httpStatusDisplay">Idle</strong>
+              </div>
+              <div class="mini-stat">
+                <span>Auth</span>
+                <strong id="authStatusDisplay">Not Checked</strong>
+              </div>
+            </div>
           </section>
         </div>
       </aside>

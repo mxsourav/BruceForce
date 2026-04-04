@@ -16,13 +16,20 @@ const PentestApp = {
   selectedTarget: null,
   scanIntensity: 8,
   scanProgress: 0,
-  beaconPpsSetting: 280,
+  profileName: "Profile 01",
   deauthActive: false,
   beaconActive: false,
   deploying: false,
   socket: null,
   socketMode: "offline",
   socketRoute: "ws://192.168.4.1/ws",
+  esp32Ip: "192.168.4.1",
+  esp32Status: {
+    ap_ssid: "DeautherNet",
+    ap_password: "SOURAV14692",
+    http_ok: false,
+    auth_ok: false
+  },
   simulationPhase: 0,
   lastSweepAt: null,
   chart: null,
@@ -60,14 +67,23 @@ const els = {
   deauthCard: document.getElementById("deauthCard"),
   deauthToggle: document.getElementById("deauthToggle"),
   deauthLed: document.getElementById("deauthLed"),
-  beaconSlider: document.getElementById("beaconSlider"),
   beaconRateDisplay: document.getElementById("beaconRateDisplay"),
   beaconButton: document.getElementById("beaconButton"),
+  beaconLabelInput: document.getElementById("beaconLabelInput"),
+  beaconModeDisplay: document.getElementById("beaconModeDisplay"),
+  beaconCopyCount: document.getElementById("beaconCopyCount"),
   targetSsidInput: document.getElementById("targetSsidInput"),
   deployButton: document.getElementById("deployButton"),
   deploymentState: document.getElementById("deploymentState"),
+  esp32IpInput: document.getElementById("esp32IpInput"),
   socketRouteInput: document.getElementById("socketRouteInput"),
+  loadStatusButton: document.getElementById("loadStatusButton"),
   routeModeDisplay: document.getElementById("routeModeDisplay"),
+  esp32SsidDisplay: document.getElementById("esp32SsidDisplay"),
+  esp32PasswordDisplay: document.getElementById("esp32PasswordDisplay"),
+  httpStatusDisplay: document.getElementById("httpStatusDisplay"),
+  authStatusDisplay: document.getElementById("authStatusDisplay"),
+  statusSyncBadge: document.getElementById("statusSyncBadge"),
   consoleWindow: document.getElementById("consoleWindow"),
   clearConsoleButton: document.getElementById("clearConsoleButton"),
   footerRoute: document.getElementById("footerRoute"),
@@ -79,6 +95,14 @@ const els = {
 
 function init() {
   PentestApp.targets = TARGET_LIBRARY.map((target) => ({ ...target, rssi: target.baseRssi }));
+  els.beaconLabelInput.value = PentestApp.profileName;
+  els.esp32IpInput.value = PentestApp.esp32Ip;
+  els.esp32SsidDisplay.textContent = PentestApp.esp32Status.ap_ssid;
+  els.esp32PasswordDisplay.textContent = PentestApp.esp32Status.ap_password;
+  els.httpStatusDisplay.textContent = "Idle";
+  els.authStatusDisplay.textContent = "Not Checked";
+  els.statusSyncBadge.textContent = "Manual";
+  syncSocketRouteFromIp();
 
   bindNav();
   bindButtons();
@@ -88,6 +112,7 @@ function init() {
   refreshTargets();
   renderTargetTable();
   updateBeaconRateDisplay();
+  updateBeaconProfileUi();
   updateTransportUi();
   updateStatusUi();
   updateActivityMeter();
@@ -116,8 +141,9 @@ function bindNav() {
 function bindButtons() {
   els.startSocketBtn.addEventListener("click", () => startSocket(false));
   els.reconnectButton.addEventListener("click", () => startSocket(true));
+  els.loadStatusButton.addEventListener("click", loadEsp32Status);
   els.scanButton.addEventListener("click", startScan);
-  els.beaconButton.addEventListener("click", toggleBeacon);
+  els.beaconButton.addEventListener("click", applyBeaconProfile);
   els.deployButton.addEventListener("click", deployTarget);
   els.clearConsoleButton.addEventListener("click", () => {
     els.consoleWindow.innerHTML = "";
@@ -128,14 +154,15 @@ function bindButtons() {
 function bindControls() {
   els.deauthToggle.addEventListener("change", handleDeauthToggle);
 
-  els.beaconSlider.addEventListener("input", () => {
-    PentestApp.beaconPpsSetting = Number(els.beaconSlider.value);
-    updateBeaconRateDisplay();
+  els.beaconLabelInput.addEventListener("input", () => {
+    PentestApp.profileName = els.beaconLabelInput.value.trim() || "Profile 01";
+    updateBeaconProfileUi();
     updateStatusUi();
+  });
 
-    if (PentestApp.beaconActive) {
-      sendCommand("beacon.updateRate", { packetsPerSec: PentestApp.beaconPpsSetting });
-    }
+  els.esp32IpInput.addEventListener("change", () => {
+    PentestApp.esp32Ip = els.esp32IpInput.value.trim() || "192.168.4.1";
+    syncSocketRouteFromIp();
   });
 
   els.socketRouteInput.addEventListener("change", () => {
@@ -238,7 +265,7 @@ function initChart() {
 }
 
 function startSocket(forceReconnect) {
-  PentestApp.socketRoute = els.socketRouteInput.value.trim() || "ws://192.168.4.1/ws";
+  syncSocketRouteFromIp();
   els.socketRouteInput.value = PentestApp.socketRoute;
   els.footerRoute.textContent = PentestApp.socketRoute;
 
@@ -377,18 +404,8 @@ function simulateDeviceResponse(action, params) {
     return;
   }
 
-  if (action === "beacon.start") {
-    scheduleResponse(220, `Beacon emitter ramping to ${params.packetsPerSec} packets per second.`, "warning");
-    return;
-  }
-
-  if (action === "beacon.stop") {
-    scheduleResponse(220, "Beacon emitter returned to standby.", "normal");
-    return;
-  }
-
-  if (action === "beacon.updateRate") {
-    scheduleResponse(140, `Beacon rate updated to ${params.packetsPerSec} packets per second.`, "normal");
+  if (action === "profile.apply") {
+    scheduleResponse(180, `Profile label set to ${params.name || "Profile 01"}.`, "normal");
     return;
   }
 
@@ -457,17 +474,58 @@ function handleDeauthToggle() {
   updateStatusUi();
 }
 
-function toggleBeacon() {
-  PentestApp.beaconActive = !PentestApp.beaconActive;
-  updateAttackState();
-
-  if (PentestApp.beaconActive) {
-    sendCommand("beacon.start", { packetsPerSec: PentestApp.beaconPpsSetting });
-  } else {
-    sendCommand("beacon.stop", { packetsPerSec: PentestApp.beaconPpsSetting });
-  }
-
+function applyBeaconProfile() {
+  PentestApp.profileName = els.beaconLabelInput.value.trim() || "Profile 01";
+  updateBeaconProfileUi();
   updateStatusUi();
+  sendCommand("profile.apply", { name: PentestApp.profileName });
+  logToConsole(`Profile applied: ${PentestApp.profileName}.`, "normal");
+}
+
+function loadEsp32Status() {
+  const ip = els.esp32IpInput.value.trim() || "192.168.4.1";
+  PentestApp.esp32Ip = ip;
+  syncSocketRouteFromIp();
+
+  const statusUrl = `http://${ip}/status`;
+  els.httpStatusDisplay.textContent = "Loading";
+  els.authStatusDisplay.textContent = "Checking";
+  els.statusSyncBadge.textContent = "Syncing";
+  logToConsole(`Requesting ESP32 status from ${statusUrl}.`, "normal");
+
+  fetch(statusUrl, {
+    cache: "no-store"
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      els.httpStatusDisplay.textContent = "OK";
+      return response.json();
+    })
+    .then((data) => {
+      const ssid = data.ap_ssid || data.device_name || "DeautherNet";
+      const password = data.ap_password || data.password || "SOURAV14692";
+      PentestApp.esp32Status = {
+        ap_ssid: ssid,
+        ap_password: password,
+        http_ok: true,
+        auth_ok: Boolean(data.auth_token || password)
+      };
+
+      els.esp32SsidDisplay.textContent = ssid;
+      els.esp32PasswordDisplay.textContent = password;
+      els.authStatusDisplay.textContent = PentestApp.esp32Status.auth_ok ? "Ready" : "Unknown";
+      els.statusSyncBadge.textContent = "Synced";
+      logToConsole(`ESP32 status synced: ${ssid} @ ${ip}.`, "normal");
+    })
+    .catch((error) => {
+      PentestApp.esp32Status.http_ok = false;
+      els.httpStatusDisplay.textContent = "Offline";
+      els.authStatusDisplay.textContent = "Fallback";
+      els.statusSyncBadge.textContent = "Manual";
+      logToConsole(`Status fetch failed for ${ip}: ${error.message}. Using local defaults.`, "warning");
+    });
 }
 
 function deployTarget() {
@@ -558,16 +616,16 @@ function runTelemetryStep() {
   const idleLoad = 6 + 2.8 * wave(0.7);
   const scanLoad = PentestApp.scanning ? 82 + 16 * wave(1.05) + 10 * wave(1.8, 0.7) : 0;
   const deauthLoad = PentestApp.deauthActive ? 136 + 18 * wave(1.35, 0.6) : 0;
-  const beaconLoad = PentestApp.beaconActive ? PentestApp.beaconPpsSetting * (0.56 + 0.06 * wave(0.82, 0.4)) : 0;
+  const profileLoad = PentestApp.profileName ? Math.min(22, PentestApp.profileName.length * 1.5) : 0;
   const deployLoad = PentestApp.deploying ? 58 + 8 * wave(1.1, 1.2) : 0;
-  const desiredPackets = Math.max(0, idleLoad + scanLoad + deauthLoad + beaconLoad + deployLoad);
+  const desiredPackets = Math.max(0, idleLoad + scanLoad + deauthLoad + profileLoad + deployLoad);
 
   const intensityBase = 8 + 3 * wave(0.55);
   const scanIntensity = PentestApp.scanning ? 44 + 14 * wave(0.9, 0.2) + 8 * wave(1.4, 0.5) : 0;
-  const beaconIntensity = PentestApp.beaconActive ? Math.min(34, PentestApp.beaconPpsSetting / 32) : 0;
+  const profileIntensity = PentestApp.profileName ? Math.min(16, PentestApp.profileName.length / 3) : 0;
   const deauthIntensity = PentestApp.deauthActive ? 20 : 0;
   const deployIntensity = PentestApp.deploying ? 14 : 0;
-  const desiredIntensity = clamp(intensityBase + scanIntensity + beaconIntensity + deauthIntensity + deployIntensity, 0, 100);
+  const desiredIntensity = clamp(intensityBase + scanIntensity + profileIntensity + deauthIntensity + deployIntensity, 0, 100);
 
   PentestApp.packetsPerSec = smoothValue(PentestApp.packetsPerSec, desiredPackets, PentestApp.attacking ? 0.28 : 0.2);
   PentestApp.scanIntensity = smoothValue(PentestApp.scanIntensity, desiredIntensity, 0.18);
@@ -596,7 +654,7 @@ function pushChartPoint() {
 }
 
 function updateAttackState() {
-  PentestApp.attacking = PentestApp.deauthActive || PentestApp.beaconActive || PentestApp.deploying;
+  PentestApp.attacking = PentestApp.deauthActive || PentestApp.deploying;
 }
 
 function updateTransportUi() {
@@ -637,7 +695,7 @@ function updateStatusUi() {
   els.scanProgressFill.style.width = `${PentestApp.scanProgress}%`;
   els.scanProgressLabel.textContent = PentestApp.scanning ? `${PentestApp.scanProgress}%` : PentestApp.lastSweepAt ? "Complete" : "Idle";
   els.lastSweepDisplay.textContent = PentestApp.lastSweepAt ? formatClock(PentestApp.lastSweepAt) : "Waiting";
-  els.beaconButton.textContent = PentestApp.beaconActive ? "Stop Beacon" : "Start Beacon";
+  els.beaconButton.textContent = "Apply Profile";
   els.attackingBadge.textContent = PentestApp.attacking ? "Attack Active" : "Standby";
   els.deploymentState.textContent = PentestApp.deploying ? "Deploying" : "Ready";
   els.attackOutputValue.textContent = describeAttackOutput();
@@ -663,7 +721,14 @@ function updateActivityMeter() {
 }
 
 function updateBeaconRateDisplay() {
-  els.beaconRateDisplay.textContent = `${PentestApp.beaconPpsSetting} PPS`;
+  els.beaconRateDisplay.textContent = PentestApp.profileName || "Profile 01";
+}
+
+function updateBeaconProfileUi() {
+  const profileName = PentestApp.profileName || "Profile 01";
+  els.beaconRateDisplay.textContent = profileName;
+  els.beaconModeDisplay.textContent = "Safe Label";
+  els.beaconCopyCount.textContent = "1 field";
 }
 
 function logToConsole(message, type = "normal") {
@@ -714,23 +779,23 @@ function getTargetName() {
 }
 
 function describeAttackOutput() {
-  if (PentestApp.deauthActive && PentestApp.beaconActive) {
-    return "Mixed Load";
-  }
-
   if (PentestApp.deauthActive) {
     return "Deauth";
-  }
-
-  if (PentestApp.beaconActive) {
-    return "Beacon";
   }
 
   if (PentestApp.deploying) {
     return "Deploying";
   }
 
-  return "Standby";
+  return "Profile Sync";
+}
+
+function syncSocketRouteFromIp() {
+  const ip = els.esp32IpInput.value.trim() || PentestApp.esp32Ip || "192.168.4.1";
+  PentestApp.esp32Ip = ip;
+  PentestApp.socketRoute = `ws://${ip}/ws`;
+  els.socketRouteInput.value = PentestApp.socketRoute;
+  els.footerRoute.textContent = PentestApp.socketRoute;
 }
 
 function formatClock(timestamp) {
