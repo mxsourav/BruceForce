@@ -1,0 +1,13 @@
+# Arduino and toolchain caches
+arduino-data/
+arduino-user/
+tools/
+
+# Build outputs
+**/build/
+**/.pio/
+**/.vscode/
+
+# Local clutter
+.DS_Store
+Thumbs.db
