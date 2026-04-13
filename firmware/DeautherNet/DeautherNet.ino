@@ -7,9 +7,135 @@
 #include <Adafruit_SSD1306.h>
 #include "CustomRadioHooks.h"
 
+// ==========================================
+// EMBEDDED HTML INTERFACE (LITE VERSION 4.0)
+// ==========================================
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BruceForce Lab</title>
+    <style>
+        body { background: #0d1117; color: #58a6ff; font-family: monospace; padding: 20px; }
+        .card { border: 1px solid #30363d; background: #161b22; padding: 15px; margin-bottom: 15px; border-radius: 8px; }
+        button { background: #238636; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; margin-bottom: 5px; font-weight: bold; }
+        button.attack { background: #da3633; }
+        button.scan { background: #1f6feb; }
+        button.clear { background: #484f58; }
+        button.inline-btn { padding: 4px 8px; font-size: 11px; margin-left: 10px; }
+        input { background: #0d1117; color: white; border: 1px solid #30363d; padding: 8px; border-radius: 6px; margin-bottom: 10px; width: 90%; }
+        .row-input { display: flex; gap: 10px; align-items: center; }
+        .row-input input { width: 100%; margin-bottom: 0; }
+        h4 { margin: 0 0 10px 0; color: #f0f6fc; }
+        #log, #scan-results { height: 120px; overflow-y: auto; background: #000; padding: 10px; font-size: 11px; color: #8b949e; border-radius: 6px; line-height: 1.8; }
+        #scan-results { color: #d2a8ff; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h3>BRUCEFORCE LAB</h3>
+    <div class="card">
+        Status: <span id="stat" style="color:#f85149">OFFLINE</span> | <button onclick="sync()">SYNC</button>
+    </div>
+    
+    <div class="card">
+        <h4>SCAN & DEAUTH</h4>
+        <button onclick="runAction('SCAN_START')">1. SCAN</button>
+        <button class="scan" onclick="getScans()">2. RESULTS</button>
+        <button class="clear" onclick="clearLog()">CLEAR LOG</button>
+        <div id="scan-results" style="margin-top: 10px;">Networks will appear here...</div>
+    </div>
+
+    <div class="card">
+        <h4>BEACON SPAMMER</h4>
+        <div class="row-input">
+            <input type="text" id="bName" placeholder="SSID Name (e.g. Free_WiFi)">
+            <input type="number" id="bCount" value="10" min="1" max="60" placeholder="Qty" style="width: 70px;">
+        </div>
+        <br>
+        <button class="attack" onclick="startBeacon()">START BEACONS</button>
+        <button class="clear" onclick="clearLog()">CLEAR LOG</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        async function sync() {
+            try {
+                const r = await fetch('/status');
+                const d = await r.json();
+                document.getElementById('stat').innerText = "ONLINE";
+                document.getElementById('stat').style.color = "#3fb950";
+                document.getElementById('log').innerHTML += "> Synced (" + d.ap_ssid + ")<br>";
+            } catch(e) { document.getElementById('log').innerHTML += "> Sync Failed<br>"; }
+        }
+
+        async function runAction(act) {
+            try {
+                await fetch('/api/action', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: act, names: [] })
+                });
+                document.getElementById('log').innerHTML += `> Sent: ${act}<br>`;
+            } catch(e) { document.getElementById('log').innerHTML += "> HTTP Error<br>"; }
+        }
+
+        async function startDeauth(mac, ch, ssid) {
+            try {
+                await fetch('/api/action', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'ATTACK_DEAUTH', names: [`${mac},${ch}`] })
+                });
+                document.getElementById('log').innerHTML += `> <b>DEAUTHING:</b> ${ssid} (Ch: ${ch})<br>`;
+            } catch(e) { document.getElementById('log').innerHTML += "> HTTP Error<br>"; }
+        }
+
+        async function startBeacon() {
+            const bName = document.getElementById('bName').value || "Clone_Net";
+            const bQty = parseInt(document.getElementById('bCount').value) || 1;
+            let names = [];
+            for(let i=0; i<bQty; i++) names.push(bName);
+            
+            try {
+                await fetch('/api/action', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'ATTACK_BEACON', names: names })
+                });
+                document.getElementById('log').innerHTML += `> Spawning ${bQty} Beacons: ${bName}<br>`;
+            } catch(e) { document.getElementById('log').innerHTML += "> HTTP Error<br>"; }
+        }
+
+        async function getScans() {
+            try {
+                const r = await fetch('/api/scans');
+                const d = await r.json();
+                if(d.status === "running") {
+                    document.getElementById('scan-results').innerHTML = "Scan in progress... wait a moment."; return;
+                }
+                let html = "<b>FOUND NETWORKS:</b><br>";
+                d.networks.forEach(n => {
+                    // Inline Attack Button generated for EVERY network
+                    html += `[${n.rssi}dBm] CH:${n.ch} | <b>${n.ssid}</b> <button class="attack inline-btn" onclick="startDeauth('${n.bssid}', ${n.ch}, '${n.ssid}')">DEAUTH</button><br>`;
+                });
+                document.getElementById('scan-results').innerHTML = html || "No networks found.";
+            } catch(e) { document.getElementById('scan-results').innerHTML = "Failed to fetch scans."; }
+        }
+
+        function clearLog() { document.getElementById('log').innerHTML = ""; }
+    </script>
+</body>
+</html>
+)rawliteral";
+// ==========================================
+
+
 namespace DeviceConfig {
-constexpr char kProjectName[] = "DeautherNet";
-constexpr char kApSsid[] = "DeautherNet";
+constexpr char kProjectName[] = "BruceForce";
+constexpr char kApSsid[] = "BruceForce";
 constexpr char kApPassword[] = "SOURAV14692";
 constexpr char kAuthToken[] = "SOURAV14692";
 
@@ -164,7 +290,7 @@ void sendAck(AsyncWebSocketClient* client, const char* action, const char* statu
 void printCredentialsToSerial() {
   Serial.println();
   Serial.println("========================================");
-  Serial.println("DeautherNet safe integration firmware");
+  Serial.println("BruceForce safe integration firmware");
   Serial.println("========================================");
   Serial.print("WiFi Access Point Name : ");
   Serial.println(DeviceConfig::kApSsid);
@@ -181,7 +307,7 @@ void printCredentialsToSerial() {
   Serial.print(getSoftApIpString());
   Serial.println(":81/ws");
   Serial.println("Manual hook file       : CustomRadioHooks.cpp");
-  Serial.println("Attack commands        : disabled in this firmware build");
+  Serial.println("Attack commands        : controlled via custom hooks");
   Serial.println("========================================");
   Serial.println();
 }
@@ -195,7 +321,7 @@ void renderDisplay() {
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(0, 0);
-  display.println("DeautherNet");
+  display.println("BruceForce");
   display.print("SSID:");
   display.println(DeviceConfig::kApSsid);
   display.print("PASS:");
@@ -209,7 +335,7 @@ void renderDisplay() {
   display.print("Scan:");
   display.println(runtime.scanRunning ? "RUN" : "IDLE");
   display.print("Mode:");
-  display.println("SAFE");
+  display.println("READY");
   display.display();
 }
 
@@ -226,33 +352,13 @@ void initDisplay() {
 }
 
 void handleRoot(AsyncWebServerRequest* request) {
-  AsyncResponseStream* response = request->beginResponseStream("text/html");
-  response->print("<!doctype html><html><head><meta charset='utf-8'>");
-  response->print("<meta name='viewport' content='width=device-width,initial-scale=1'>");
-  response->print("<title>DeautherNet</title><style>");
-  response->print("body{font-family:Arial,sans-serif;background:#121417;color:#f3f5f8;padding:24px;}");
-  response->print(".card{max-width:620px;margin:auto;padding:24px;border-radius:18px;background:#1b1e23;");
-  response->print("box-shadow:0 16px 34px rgba(0,0,0,.34);}code{color:#8ec6ff;}strong{color:#fff;}");
-  response->print("</style></head><body><div class='card'>");
-  response->print("<h1>DeautherNet</h1>");
-  response->print("<p>Safe integration build is active.</p>");
-  response->print("<p><strong>SSID:</strong> ");
-  response->print(DeviceConfig::kApSsid);
-  response->print("</p><p><strong>Password:</strong> ");
-  response->print(DeviceConfig::kApPassword);
-  response->print("</p><p><strong>IP:</strong> ");
-  response->print(getSoftApIpString());
-  response->print("</p><p><strong>WebSocket:</strong> <code>ws://");
-  response->print(getSoftApIpString());
-  response->print(":81/ws</code></p>");
-  response->print("<p><strong>Manual hooks:</strong> <code>CustomRadioHooks.cpp</code></p>");
-  response->print("<p><strong>Safe mode:</strong> attack actions are intentionally blocked in this build.</p>");
-  response->print("</div></body></html>");
-  request->send(response);
+  // SERVE THE EMBEDDED HTML FILE FROM FLASH MEMORY
+  request->send_P(200, "text/html", index_html);
 }
 
 void handleStatus(AsyncWebServerRequest* request) {
-  StaticJsonDocument<512> document;
+  DynamicJsonDocument document(2048);
+  
   document["device"] = DeviceConfig::kProjectName;
   document["ap_ssid"] = DeviceConfig::kApSsid;
   document["ap_password"] = DeviceConfig::kApPassword;
@@ -264,11 +370,11 @@ void handleStatus(AsyncWebServerRequest* request) {
   document["ws_clients"] = runtime.wsClientCount;
   document["scan_running"] = runtime.scanRunning;
   document["safe_mode"] = runtime.safeMode;
-  document["attack_actions_enabled"] = DeviceConfig::kAttackActionsEnabled;
+  document["attack_actions_enabled"] = true;
   document["oled_ready"] = runtime.oledReady;
   document["channel"] = runtime.currentChannel;
-  JsonObject manualHooks = document.createNestedObject("manual_hooks");
-  appendCustomRadioStatus(manualHooks);
+
+  appendCustomRadioStatus(document.as<JsonObject>());
 
   String payload;
   serializeJson(document, payload);
@@ -280,7 +386,7 @@ void handleOptions(AsyncWebServerRequest* request) {
 }
 
 void broadcastStats() {
-  StaticJsonDocument<256> document;
+  StaticJsonDocument<512> document;
   document["type"] = "stats";
   document["pkts"] = runtime.packetActivityProxy;
   document["deauths"] = 0;
@@ -347,16 +453,12 @@ void handleCommand(AsyncWebSocketClient* client, JsonDocument& document) {
 
   if (strcmp(action, "STOP") == 0) {
     stopOperations();
-    sendAck(client, action, "accepted", "Active safe-mode tasks were stopped.");
+    sendAck(client, action, "accepted", "Active tasks were stopped.");
     return;
   }
 
-  StaticJsonDocument<256> customResponse;
+  DynamicJsonDocument customResponse(1024);
   if (handleCustomRadioAction(document, customResponse, Serial)) {
-    const char* responseType = customResponse["type"] | "";
-    if (strcmp(responseType, "error") == 0) {
-      runtime.blockedAttackRequests++;
-    }
     sendJsonToClient(client, customResponse);
     return;
   }
@@ -365,7 +467,7 @@ void handleCommand(AsyncWebSocketClient* client, JsonDocument& document) {
 }
 
 void handleSocketMessage(AsyncWebSocketClient* client, const uint8_t* data, const size_t length) {
-  StaticJsonDocument<256> document;
+  StaticJsonDocument<512> document;
   const DeserializationError error = deserializeJson(document, data, length);
   if (error) {
     sendError(client, "invalid_json", "Could not parse JSON command packet.");
@@ -449,6 +551,67 @@ void registerHttpRoutes() {
   httpServer.on("/", HTTP_OPTIONS, handleOptions);
   httpServer.on("/status", HTTP_GET, handleStatus);
   httpServer.on("/status", HTTP_OPTIONS, handleOptions);
+
+  // NEW ROUTE: Send the scan results to the Lite UI
+  httpServer.on("/api/scans", HTTP_GET, [](AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(3072);
+    int scanCount = WiFi.scanComplete();
+    
+    if (scanCount == WIFI_SCAN_RUNNING) {
+      doc["status"] = "running";
+      doc.createNestedArray("networks");
+    } else {
+      doc["status"] = "complete";
+      JsonArray networks = doc.createNestedArray("networks");
+      int count = max(0, scanCount);
+      for (int i = 0; i < min(count, 16); ++i) {
+        JsonObject net = networks.createNestedObject();
+        net["ssid"] = WiFi.SSID(i);
+        net["bssid"] = WiFi.BSSIDstr(i);
+        net["rssi"] = WiFi.RSSI(i);
+        net["ch"] = WiFi.channel(i);
+      }
+    }
+    String out;
+    serializeJson(doc, out);
+    request->send(200, "application/json", out);
+  });
+
+  httpServer.on("/api/action", HTTP_GET, [](AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument response(1024);
+    doc["action"] = request->arg("action");
+    handleCustomRadioAction(doc, response, Serial);
+    String out;
+    serializeJson(response, out);
+    request->send(200, "application/json", out);
+  });
+
+  httpServer.on("/api/action", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, 
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      DynamicJsonDocument doc(2048);
+      DynamicJsonDocument response(1024);
+      
+      DeserializationError error = deserializeJson(doc, data, len);
+      if (error) {
+          request->send(400, "application/json", "{\"error\":\"invalid_json\"}");
+          return;
+      }
+
+      // Check if it's the SCAN command passed via HTTP POST
+      if (doc["action"] == "SCAN_START") {
+        startAsyncScan();
+        response["detail"] = "Scan started";
+      } else {
+        // Fallback to custom radio hook actions (Beacon, Deauth, etc)
+        handleCustomRadioAction(doc, response, Serial);
+      }
+      
+      String out;
+      serializeJson(response, out);
+      request->send(200, "application/json", out);
+  });
+
   httpServer.begin();
 
   socketEndpoint.onEvent(handleSocketEvent);
@@ -563,15 +726,13 @@ void maybeLogHeartbeat() {
   Serial.print(" | WS clients: ");
   Serial.print(runtime.wsClientCount);
   Serial.print(" | Scan: ");
-  Serial.print(runtime.scanRunning ? "RUNNING" : "IDLE");
-  Serial.print(" | Safe mode: ");
-  Serial.println(runtime.safeMode ? "ON" : "OFF");
+  Serial.println(runtime.scanRunning ? "RUNNING" : "IDLE");
 }
 
 void setup() {
   Serial.begin(DeviceConfig::kSerialBaud);
   Serial.println();
-  Serial.println("Booting DeautherNet safe integration firmware...");
+  Serial.println("Booting BruceForce firmware...");
 
   startSoftAp();
   initDisplay();
