@@ -8,6 +8,7 @@ BruceForce is a compact offensive and defensive wireless security research and n
 - Generic ESP32 slave firmware for the OLED status/graph co-processor
 - Hardware notes, pin mappings, and version logs
 - Legacy firmware source retained under the `firmware/` tree while the repo transitions to the BruceForce brand
+- Full feature catalog with Wikipedia references: [`FEATURES.md`](FEATURES.md)
 
 ## Current status
 
@@ -147,6 +148,10 @@ BruceForce is being expanded toward a full authorized security research platform
 - NFC / RFID tools
 - Additional radio modules
 - Better cross-device telemetry and UI routing
+
+## Feature Reference
+
+For a concise but detailed overview of the current menu groups, their lab-oriented purpose, and the matching Wikipedia references, open [`FEATURES.md`](FEATURES.md).
 
 ## License
 
