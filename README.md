@@ -10,6 +10,21 @@ BruceForce is a compact offensive and defensive wireless security research and n
 - Legacy firmware source retained under the `firmware/` tree while the repo transitions to the BruceForce brand
 - Full feature catalog with Wikipedia references: [`FEATURES.md`](FEATURES.md)
 
+## Language Stack
+
+<p align="left">
+  <img src="https://skillicons.dev/icons?i=c,cpp,arduino,html,css,js&perline=6" alt="BruceForce language stack" />
+</p>
+
+The project uses these core languages and toolchain layers:
+
+- `C++` for the ESP32 firmware and application logic
+- `C` for low-level display and hardware helpers
+- `Arduino` for the sketch-based entry points and board integration
+- `HTML` for any embedded control or dashboard surfaces
+- `CSS` for styling the web-facing parts
+- `JavaScript` for runtime behavior and interaction logic
+
 ## Current status
 
 Working today:
